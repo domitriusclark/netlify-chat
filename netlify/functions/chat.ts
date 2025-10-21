@@ -1,75 +1,149 @@
-import type { Context } from "@netlify/functions";
-import { getDeployStore } from "@netlify/blobs";
-import OpenAI from "openai";
+import type { Context } from '@netlify/functions';
+import { createChatAgent } from '../lib/agents';
+import { memory, initializeStorage } from '../lib/memory';
 
-const CHAT_KEY = "current-chat";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
+export interface ChatRequest {
+  message: string;
+  modelId?: string;
+  threadId?: string;
+  resourceId?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  newConversation?: boolean;
 }
 
-export default async function(req: Request, context: Context) {
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
+export default async function handler(req: Request, _context: Context) {
+  if (req.method !== 'POST') {
+    return new Response('Method Not Allowed', { status: 405 });
   }
 
+  // Ensure storage is initialized before any operations
+  await initializeStorage();
+
   try {
-    const { message, newConversation } = await req.json();
-    const store = getDeployStore("chat-history");
+    const body: ChatRequest = await req.json();
+    const {
+      message,
+      modelId = 'gpt-4o-mini',
+      threadId,
+      resourceId = 'default-user', // In production, get from auth
+      systemPrompt,
+      temperature,
+      newConversation = false,
+    } = body;
 
-    
+    // Handle new conversation creation
     if (newConversation) {
-      await store.setJSON(CHAT_KEY, []);
-      return new Response(JSON.stringify({ success: true }));
+      const thread = await memory.createThread({
+        resourceId,
+        metadata: {
+          modelId,
+          createdAt: new Date().toISOString()
+        }
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          threadId: thread.id
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
     }
 
+    // Validate required fields
     if (!message) {
-      return new Response("Message is required", { status: 400 });
+      return new Response(
+        JSON.stringify({ error: 'Message is required' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Get history and update with user message
-    const history = (await store.get(CHAT_KEY, { type: "json" })) as ChatMessage[] || [];
-    const updatedHistory = [...history, { role: "user", content: message }];
-    
-    // Stream the AI response
-    const stream = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: updatedHistory,
-      stream: true,
+    if (!threadId) {
+      return new Response(
+        JSON.stringify({ error: 'Thread ID is required' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create agent for this request
+    const agent = createChatAgent({
+      modelId,
+      systemPrompt,
+      temperature,
     });
-    
-    return new Response(
-      new ReadableStream({
-        async start(controller) {
-          let assistantMessage = '';
-          for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || "";
-            assistantMessage += text;
-            controller.enqueue(new TextEncoder().encode(text));
-          }
-          
-          await store.setJSON(CHAT_KEY, [
-            ...updatedHistory, 
-            { role: "assistant", content: assistantMessage }
-          ]);
-          controller.close();
-        },
-      }), 
-      {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
+
+    // Stream the response using Mastra's native streaming
+    // The agent automatically handles memory when threadId and resourceId are provided
+    const stream = await agent.stream(message, {
+      threadId,
+      resourceId,
+    });
+
+    // Use the Mastra's textStream and wrap it in our JSON format
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    (async () => {
+      try {
+        // Get the text stream from Mastra - it's already a ReadableStream<string>
+        const reader = stream.textStream.getReader();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // value is already a string
+          await writer.write(
+            encoder.encode(
+              JSON.stringify({ type: 'chunk', content: value }) + '\n'
+            )
+          );
+        }
+
+        await writer.write(
+          encoder.encode(
+            JSON.stringify({ type: 'done', threadId, modelId }) + '\n'
+          )
+        );
+
+        writer.close();
+      } catch (error) {
+        console.error('Stream error:', error);
+        await writer.write(
+          encoder.encode(
+            JSON.stringify({
+              type: 'error',
+              error: error instanceof Error ? error.message : 'Streaming error'
+            }) + '\n'
+          )
+        );
+        writer.close();
       }
-    );
+    })();
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
 
   } catch (error) {
-    console.error("Error:", error);
-    return new Response(JSON.stringify({ error: "Internal Server Error" }), {
-      status: 500,
-    });
+    console.error('Chat function error:', error);
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Internal Server Error'
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
   }
 }
