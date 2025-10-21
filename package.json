@@ -4,21 +4,31 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "dev:netlify": "netlify dev",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.8",
+    "@ai-sdk/google": "^1.0.9",
+    "@ai-sdk/openai": "^1.0.8",
     "@astrojs/netlify": "^6.2.0",
     "@astrojs/react": "^4.2.0",
+    "@mastra/core": "^0.21.1",
+    "@mastra/libsql": "^0.15.2",
+    "@mastra/memory": "^0.15.7",
+    "@netlify/blobs": "^8.1.0",
     "@netlify/functions": "^3.0.0",
     "@tailwindcss/vite": "^4.0.12",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "ai": "^5.0.74",
     "astro": "^5.3.0",
     "openai": "^4.85.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwindcss": "^4.0.12"
+    "tailwindcss": "^4.0.12",
+    "zod": "^3.24.1"
   }
 }
