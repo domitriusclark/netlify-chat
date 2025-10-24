@@ -1,14 +1,16 @@
 import type { APIRoute } from 'astro';
 
 /**
- * Diagnostic endpoint to check environment variable availability
- *
- * This helps debug Netlify AI Gateway configuration in dev vs production.
- * Shows which env vars are accessible and from which source.
- *
- * IMPORTANT: Remove or secure this endpoint before deploying to production!
+ * Diagnostic endpoint for Netlify AI Gateway debugging
+ * WARNING: Only enable this in development. Remove or secure before production deploy!
  */
 export const GET: APIRoute = async () => {
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(JSON.stringify({ error: 'Endpoint disabled in production' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   const diagnostics: Record<string, any> = {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'unknown',
@@ -65,28 +67,43 @@ export const GET: APIRoute = async () => {
     }
   }
 
-  // Check AI_GATEWAY config
+  // Check AI_GATEWAY config (base64 encoded)
   const aiGatewayConfig = process.env.AI_GATEWAY || (import.meta.env as any).AI_GATEWAY;
   if (aiGatewayConfig) {
     diagnostics.ai_gateway.config_present = true;
     try {
-      const parsed = JSON.parse(aiGatewayConfig);
+      // Decode base64 first
+      const decoded = Buffer.from(aiGatewayConfig, 'base64').toString('utf-8');
+      const parsed = JSON.parse(decoded);
       diagnostics.ai_gateway.config_valid = true;
-      diagnostics.ai_gateway.providers = Object.keys(parsed.providers || {});
-      diagnostics.ai_gateway.provider_details = Object.entries(parsed.providers || {}).reduce(
-        (acc, [provider, config]: [string, any]) => {
-          acc[provider] = {
-            has_token_env_var: !!config.token_env_var,
-            has_url_env_var: !!config.url_env_var,
-            token_var_name: config.token_env_var,
-            url_var_name: config.url_env_var,
-            token_var_available: !!(process.env[config.token_env_var] || (import.meta.env as any)[config.token_env_var]),
-            url_var_available: !!(process.env[config.url_env_var] || (import.meta.env as any)[config.url_env_var]),
-          };
-          return acc;
-        },
-        {} as Record<string, any>
-      );
+
+      // Add raw parsed structure for debugging
+      (diagnostics.ai_gateway as any).raw_structure = {
+        has_providers: 'providers' in parsed,
+        providers_type: typeof parsed.providers,
+        providers_is_array: Array.isArray(parsed.providers),
+        providers_length: Array.isArray(parsed.providers) ? parsed.providers.length : 'N/A',
+        sample_provider: Array.isArray(parsed.providers) && parsed.providers.length > 0 ? parsed.providers[0] : null,
+      };
+
+      // Providers is an array: [["openai", {...}], ["anthropic", {...}]]
+      if (Array.isArray(parsed.providers)) {
+        diagnostics.ai_gateway.providers = parsed.providers.map(([name]: [string, any]) => name);
+        diagnostics.ai_gateway.provider_details = parsed.providers.reduce(
+          (acc: Record<string, any>, [provider, config]: [string, any]) => {
+            acc[provider] = {
+              has_token_env_var: !!config.token_env_var,
+              has_url_env_var: !!config.url_env_var,
+              token_var_name: config.token_env_var,
+              url_var_name: config.url_env_var,
+              token_var_available: !!(process.env[config.token_env_var] || (import.meta.env as any)[config.token_env_var]),
+              url_var_available: !!(process.env[config.url_env_var] || (import.meta.env as any)[config.url_env_var]),
+            };
+            return acc;
+          },
+          {} as Record<string, any>
+        );
+      }
     } catch (error) {
       diagnostics.ai_gateway.parse_error = error instanceof Error ? error.message : 'Unknown error';
     }
