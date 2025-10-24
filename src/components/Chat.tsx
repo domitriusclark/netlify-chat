@@ -49,7 +49,7 @@ export default function Chat() {
 
   async function loadThreads() {
     try {
-      const response = await fetch(`/.netlify/functions/threads?resourceId=${RESOURCE_ID}`);
+      const response = await fetch(`/api/threads?resourceId=${RESOURCE_ID}`);
       const data = await response.json();
       setThreads(data.threads || []);
     } catch (error) {
@@ -59,7 +59,7 @@ export default function Chat() {
 
   async function startNewConversation() {
     try {
-      const response = await fetch("/.netlify/functions/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,7 +83,7 @@ export default function Chat() {
   async function loadThread(threadId: string) {
     try {
       const response = await fetch(
-        `/.netlify/functions/threads?threadId=${threadId}`
+        `/api/threads?threadId=${threadId}`
       );
       const data = await response.json();
 
@@ -98,7 +98,7 @@ export default function Chat() {
 
   async function deleteThread(threadId: string) {
     try {
-      await fetch(`/.netlify/functions/threads?threadId=${threadId}`, {
+      await fetch(`/api/threads?threadId=${threadId}`, {
         method: "DELETE"
       });
 
@@ -180,7 +180,7 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/.netlify/functions/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

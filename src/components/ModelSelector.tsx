@@ -1,91 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-// Import model configuration from backend
-// We'll create a shared models file that can be used in both frontend and backend
-interface ModelConfig {
+interface ModelInfo {
   id: string;
-  name: string;
   provider: 'openai' | 'anthropic' | 'google';
-  description: string;
-  contextWindow: number;
+  displayName: string;
 }
-
-// Available models (matches netlify/lib/models.ts)
-const AVAILABLE_MODELS: ModelConfig[] = [
-  // OpenAI Models
-  {
-    id: 'gpt-4o',
-    name: 'GPT-4 Omni',
-    provider: 'openai',
-    description: 'Most capable multimodal model',
-    contextWindow: 128000,
-  },
-  {
-    id: 'gpt-4o-mini',
-    name: 'GPT-4 Omni Mini',
-    provider: 'openai',
-    description: 'Faster, more affordable GPT-4 variant',
-    contextWindow: 128000,
-  },
-  {
-    id: 'o3-mini',
-    name: 'O3 Mini',
-    provider: 'openai',
-    description: 'Reasoning model for complex tasks',
-    contextWindow: 200000,
-  },
-  {
-    id: 'gpt-4o-audio-preview',
-    name: 'GPT-4 Omni Audio Preview',
-    provider: 'openai',
-    description: 'Multimodal with audio capabilities',
-    contextWindow: 128000,
-  },
-  // Anthropic Models
-  {
-    id: 'claude-sonnet-4-5',
-    name: 'Claude Sonnet 4.5',
-    provider: 'anthropic',
-    description: 'Latest Claude with improved reasoning',
-    contextWindow: 200000,
-  },
-  {
-    id: 'claude-opus-4-1',
-    name: 'Claude Opus 4.1',
-    provider: 'anthropic',
-    description: 'Most powerful Claude model',
-    contextWindow: 200000,
-  },
-  {
-    id: 'claude-haiku-3-5',
-    name: 'Claude 3.5 Haiku',
-    provider: 'anthropic',
-    description: 'Fast, efficient Claude variant',
-    contextWindow: 200000,
-  },
-  // Google Models
-  {
-    id: 'gemini-2-5-pro',
-    name: 'Gemini 2.5 Pro',
-    provider: 'google',
-    description: 'Advanced multimodal understanding',
-    contextWindow: 1000000,
-  },
-  {
-    id: 'gemini-2-5-flash',
-    name: 'Gemini 2.5 Flash',
-    provider: 'google',
-    description: 'Fast, efficient Gemini variant',
-    contextWindow: 1000000,
-  },
-  {
-    id: 'gemini-flash',
-    name: 'Gemini Flash',
-    provider: 'google',
-    description: 'Lightweight Gemini model',
-    contextWindow: 1000000,
-  },
-];
 
 interface ModelSelectorProps {
   selectedModel: string;
@@ -93,21 +12,55 @@ interface ModelSelectorProps {
   disabled?: boolean;
 }
 
+// Fallback models if API fetch fails
+const FALLBACK_MODELS: ModelInfo[] = [
+  { id: 'gpt-4o-mini', provider: 'openai', displayName: 'GPT-4 Omni Mini' },
+  { id: 'gpt-4o', provider: 'openai', displayName: 'GPT-4 Omni' },
+  { id: 'claude-sonnet-4-5-20250929', provider: 'anthropic', displayName: 'Claude Sonnet 4.5' },
+  { id: 'claude-3-5-haiku-20241022', provider: 'anthropic', displayName: 'Claude 3.5 Haiku' },
+  { id: 'gemini-2.5-flash', provider: 'google', displayName: 'Gemini 2.5 Flash' },
+];
+
 export default function ModelSelector({
   selectedModel,
   onModelChange,
   disabled = false
 }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [models, setModels] = useState<ModelInfo[]>(FALLBACK_MODELS);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const currentModel = AVAILABLE_MODELS.find(m => m.id === selectedModel);
+  // Fetch available models on mount
+  useEffect(() => {
+    async function fetchModels() {
+      try {
+        const response = await fetch('/api/models');
+        if (!response.ok) throw new Error('Failed to fetch models');
+
+        const data = await response.json();
+
+        if (data.models && Array.isArray(data.models)) {
+          setModels(data.models);
+        }
+      } catch (error) {
+        console.error('Error fetching models, using fallback:', error);
+        // Keep fallback models on error
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchModels();
+  }, []);
+
+  const currentModel = models.find(m => m.id === selectedModel);
 
   // Group models by provider
-  const modelsByProvider = AVAILABLE_MODELS.reduce((acc, model) => {
+  const modelsByProvider = models.reduce((acc, model) => {
     if (!acc[model.provider]) acc[model.provider] = [];
     acc[model.provider].push(model);
     return acc;
-  }, {} as Record<string, ModelConfig[]>);
+  }, {} as Record<string, ModelInfo[]>);
 
   const providerLabels = {
     openai: 'OpenAI',
@@ -120,9 +73,11 @@ export default function ModelSelector({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        disabled={disabled}
+        disabled={disabled || isLoading}
         className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white">
-        <span className="font-medium">{currentModel?.name || 'Select Model'}</span>
+        <span className="font-medium">
+          {isLoading ? 'Loading...' : (currentModel?.displayName || 'Select Model')}
+        </span>
         <svg
           className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
@@ -132,7 +87,7 @@ export default function ModelSelector({
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && !isLoading && (
         <>
           {/* Backdrop to close dropdown when clicking outside */}
           <div
@@ -142,12 +97,12 @@ export default function ModelSelector({
 
           {/* Dropdown menu */}
           <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-96 overflow-y-auto">
-            {Object.entries(modelsByProvider).map(([provider, models]) => (
+            {Object.entries(modelsByProvider).map(([provider, providerModels]) => (
               <div key={provider} className="p-2">
                 <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase">
                   {providerLabels[provider as keyof typeof providerLabels]}
                 </div>
-                {models.map(model => (
+                {providerModels.map(model => (
                   <button
                     key={model.id}
                     type="button"
@@ -158,11 +113,8 @@ export default function ModelSelector({
                     className={`w-full text-left px-3 py-2 rounded hover:bg-gray-50 ${
                       model.id === selectedModel ? 'bg-blue-50' : ''
                     }`}>
-                    <div className="font-medium text-sm">{model.name}</div>
-                    <div className="text-xs text-gray-500">{model.description}</div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      Context: {(model.contextWindow / 1000).toFixed(0)}K tokens
-                    </div>
+                    <div className="font-medium text-sm">{model.displayName}</div>
+                    <div className="text-xs text-gray-500 truncate">{model.id}</div>
                   </button>
                 ))}
               </div>

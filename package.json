@@ -10,9 +10,9 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.0.8",
-    "@ai-sdk/google": "^1.0.9",
-    "@ai-sdk/openai": "^1.0.8",
+    "@ai-sdk/anthropic": "^2.0.37",
+    "@ai-sdk/google": "^2.0.23",
+    "@ai-sdk/openai": "^2.0.53",
     "@astrojs/netlify": "^6.2.0",
     "@astrojs/react": "^4.2.0",
     "@mastra/core": "^0.21.1",

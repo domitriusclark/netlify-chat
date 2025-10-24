@@ -4,13 +4,17 @@ import { LibSQLStore } from '@mastra/libsql';
 // Initialize storage with LibSQL
 // For local dev: uses file-based SQLite
 // For production: connects to Turso (serverless LibSQL)
+//
+// Use process.env for server-side environment variables
+// Netlify injects these at runtime in Functions/SSR context
 const storageConfig: any = {
-  url: process.env.DATABASE_URL || 'file:./chat-memory.db',
+  url: process.env.DATABASE_URL || import.meta.env.DATABASE_URL || 'file:./chat-memory.db',
 };
 
 // Only add authToken if it's defined (for remote Turso databases)
-if (process.env.DATABASE_AUTH_TOKEN) {
-  storageConfig.authToken = process.env.DATABASE_AUTH_TOKEN;
+const authToken = process.env.DATABASE_AUTH_TOKEN || import.meta.env.DATABASE_AUTH_TOKEN;
+if (authToken) {
+  storageConfig.authToken = authToken;
 }
 
 const storage = new LibSQLStore(storageConfig);

@@ -1,6 +1,6 @@
-import type { Context } from '@netlify/functions';
-import { createChatAgent } from '../lib/agents';
-import { memory, initializeStorage } from '../lib/memory';
+import type { APIRoute } from 'astro';
+import { createChatAgent } from '../../lib/agents';
+import { memory, initializeStorage } from '../../lib/memory';
 
 export interface ChatRequest {
   message: string;
@@ -12,16 +12,12 @@ export interface ChatRequest {
   newConversation?: boolean;
 }
 
-export default async function handler(req: Request, _context: Context) {
-  if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
-  }
-
+export const POST: APIRoute = async ({ request }) => {
   // Ensure storage is initialized before any operations
   await initializeStorage();
 
   try {
-    const body: ChatRequest = await req.json();
+    const body: ChatRequest = await request.json();
     const {
       message,
       modelId = 'gpt-4o-mini',
@@ -146,4 +142,4 @@ export default async function handler(req: Request, _context: Context) {
       }
     );
   }
-}
+};
